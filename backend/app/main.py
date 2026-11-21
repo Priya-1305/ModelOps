@@ -1,5 +1,6 @@
 import time
 import uuid
+from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,7 +24,8 @@ from backend.app.core.metrics import (
 from backend.app.ml.registry import model_manager
 from backend.app.services.training_service import training_service
 from backend.app.schemas.training import TrainingRunCreate
-from backend.app.db.session import init_db
+from backend.app.db.session import init_db, SessionLocal
+from backend.app.db.repository import ModelOpsRepository
 
 # API Routers
 from backend.app.api.v1.health import router as health_router
@@ -60,7 +62,9 @@ async def lifespan(app: FastAPI):
                 reg = repo.get_registered_model_by_id_or_name(settings.DEFAULT_MODEL_NAME)
                 if not reg:
                     reg = repo.get_or_create_registered_model(settings.DEFAULT_MODEL_NAME)
-                    v_num = model_entry["metadata"].get("version", "1.0")
+                v_num = model_entry["metadata"].get("version", "1.0")
+                ver = repo.get_model_version(reg.id, v_num)
+                if not ver:
                     repo.create_model_version({
                         "id": str(uuid.uuid4()),
                         "registered_model_id": reg.id,
@@ -71,6 +75,10 @@ async def lifespan(app: FastAPI):
                         "artifact_uri": model_entry["metadata"].get("artifact_path", ""),
                         "promoted_at": datetime.now(timezone.utc),
                     })
+                else:
+                    ver.stage = "production"
+                    ver.promoted_at = datetime.now(timezone.utc)
+                    db.commit()
         except Exception as sync_err:
             logger.warning(f"Could not sync existing disk model to database: {sync_err}")
     except Exception:
@@ -87,9 +95,6 @@ async def lifespan(app: FastAPI):
             model_manager.set_active_version(settings.DEFAULT_MODEL_NAME, res["version"])
             ACTIVE_MODEL_VERSION.labels(model_name=settings.DEFAULT_MODEL_NAME, version=res["version"]).set(1)
             try:
-                from backend.app.db.session import SessionLocal
-                from backend.app.db.repository import ModelOpsRepository
-                from datetime import datetime, timezone
                 with SessionLocal() as db:
                     repo = ModelOpsRepository(db)
                     ver = repo.get_model_version(settings.DEFAULT_MODEL_NAME, res["version"])
