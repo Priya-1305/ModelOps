@@ -1,0 +1,140 @@
+services:
+  # 1. PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: modelops-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-modelops}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-modelops_secure_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-modelops_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U modelops -d modelops_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - modelops-network
+
+  # 2. MLflow Tracking Server
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.15.0
+    container_name: modelops-mlflow
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "5000:5000"
+    environment:
+      - MLFLOW_ALLOW_FILE_STORE=true
+      - MLFLOW_DISABLE_AGENT_HINT=1
+    volumes:
+      - mlflow_data:/mlflow
+      - modelops_artifacts:/app/artifacts
+    command: >
+      mlflow server
+      --backend-store-uri postgresql://${POSTGRES_USER:-modelops}:${POSTGRES_PASSWORD:-modelops_secure_pass}@postgres:5432/${POSTGRES_DB:-modelops_db}
+      --default-artifact-root /app/artifacts/mlruns
+      --host 0.0.0.0
+      --port 5000
+    networks:
+      - modelops-network
+
+  # 3. ModelOps Backend API Service
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    container_name: modelops-backend
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=False
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-modelops}:${POSTGRES_PASSWORD:-modelops_secure_pass}@postgres:5432/${POSTGRES_DB:-modelops_db}
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - ARTIFACT_STORE_PATH=/app/artifacts
+      - MODEL_REGISTRY_PATH=/app/artifacts/models
+      - EVIDENTLY_REPORTS_PATH=/app/artifacts/reports
+    volumes:
+      - modelops_artifacts:/app/artifacts
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - modelops-network
+
+  # 4. Prometheus Metrics Scraper
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: modelops-prometheus
+    restart: always
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - modelops-network
+
+  # 5. Grafana Monitoring Dashboard
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: modelops-grafana
+    restart: always
+    depends_on:
+      - prometheus
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./docker/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./docker/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./docker/grafana/dashboards:/etc/grafana/provisioning/dashboards/modelops:ro
+      - grafana_data:/var/lib/grafana
+    networks:
+      - modelops-network
+
+  # 6. React Frontend Dashboard
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    container_name: modelops-frontend
+    restart: always
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3000:80"
+    networks:
+      - modelops-network
+
+volumes:
+  postgres_data:
+  mlflow_data:
+  prometheus_data:
+  grafana_data:
+  modelops_artifacts:
+
+networks:
+  modelops-network:
+    driver: bridge

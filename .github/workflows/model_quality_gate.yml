@@ -1,0 +1,63 @@
+name: Model Quality Gate & Evaluation Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      model_type:
+        description: 'Candidate Model Architecture (random_forest or logistic_regression)'
+        required: true
+        default: 'random_forest'
+      target_stage:
+        description: 'Target Deployment Stage'
+        required: true
+        default: 'staging'
+      minimum_f1:
+        description: 'Minimum Validation F1 Gate'
+        required: true
+        default: '0.88'
+      minimum_roc_auc:
+        description: 'Minimum Validation ROC-AUC Gate'
+        required: true
+        default: '0.88'
+
+jobs:
+  evaluate-and-gate:
+    name: Train, Evaluate, and Validate Acceptance Criteria
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Run Retraining & Candidate Evaluation Script
+        env:
+          ENVIRONMENT: testing
+          DATABASE_URL: sqlite:///gate_test.db
+          MLFLOW_ALLOW_FILE_STORE: 'true'
+          MLFLOW_DISABLE_AGENT_HINT: '1'
+        run: |
+          python -c "
+          from backend.app.services.retraining_service import retraining_service
+          result = retraining_service.trigger_retraining(
+              reason='CI/CD Quality Gate Trigger',
+              model_type='${{ github.event.inputs.model_type }}'
+          )
+          print('Candidate Version:', result['candidate_version'])
+          print('Recommendation:', result['recommendation'])
+          print('Decision:', result['decision_rationale'])
+          assert result['recommendation'] == 'RECOMMENDED_FOR_PROMOTION', f'Model rejected by quality gate: {result[\"decision_rationale\"]}'
+          "
+
+      - name: Report Gate Status
+        run: echo "Candidate model passed automated evaluation criteria. Ready for controlled promotion."
