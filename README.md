@@ -79,6 +79,16 @@ flowchart TD
 
 ---
 
+## 4. Platform Dashboard Showcase
+
+| Overview & Serving Metrics | Real-Time Prediction Explorer |
+|:---:|:---:|
+| ![Overview](docs/images/dashboard_overview.png) | ![Predictions](docs/images/dashboard_predictions.png) |
+| **Statistical Drift Breakdown** | **Model Registry & Governance** |
+| ![Drift](docs/images/dashboard_drift.png) | ![Registry](docs/images/dashboard_registry.png) |
+
+---
+
 ## 4. Initial ML Use Case: Wisconsin Breast Cancer Classification
 
 - **Dataset**: 569 patient samples, 30 continuous clinical features (mean, error, worst values of radius, texture, perimeter, area, smoothness, etc.).
