@@ -96,7 +96,7 @@ class ModelVersion(Base):
     training_run: Mapped[Optional["TrainingRun"]] = relationship("TrainingRun", back_populates="model_versions")
     deployments: Mapped[List["Deployment"]] = relationship("Deployment", back_populates="model_version")
     prediction_logs: Mapped[List["PredictionLog"]] = relationship("PredictionLog", back_populates="model_version_rel")
-    monitoring_reports: Mapped[List["MonitoringReport"]] = relationship("MonitoringReport", back_populates="model_version")
+    monitoring_reports: Mapped[List["MonitoringReport"]] = relationship("MonitoringReport", back_populates="model_version_rel")
 
 
 class Deployment(Base):
@@ -155,4 +155,4 @@ class MonitoringReport(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), server_default=func.now(), index=True
     )
 
-    model_version: Mapped[Optional["ModelVersion"]] = relationship("ModelVersion", back_populates="monitoring_reports")
+    model_version_rel: Mapped[Optional["ModelVersion"]] = relationship("ModelVersion", back_populates="monitoring_reports")

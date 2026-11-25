@@ -13,8 +13,29 @@ import { SystemHealth } from './pages/SystemHealth';
 import { Bell, Terminal } from 'lucide-react';
 
 export const App: React.FC = () => {
-  const [currentPage, setCurrentPage] = useState<string>('overview');
+  const getInitialPage = () => {
+    const hash = window.location.hash.replace('#', '');
+    if (hash) return hash;
+    const params = new URLSearchParams(window.location.search);
+    return params.get('page') || 'overview';
+  };
+
+  const [currentPage, setCurrentPageState] = useState<string>(getInitialPage);
   const [selectedModel, setSelectedModel] = useState<string>('breast_cancer_classifier');
+
+  const setCurrentPage = (page: string) => {
+    setCurrentPageState(page);
+    window.location.hash = page;
+  };
+
+  React.useEffect(() => {
+    const handleHash = () => {
+      const hash = window.location.hash.replace('#', '');
+      if (hash) setCurrentPageState(hash);
+    };
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, []);
 
   const handleSelectModel = (name: string) => {
     setSelectedModel(name);
